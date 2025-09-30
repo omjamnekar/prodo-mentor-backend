@@ -1,8 +1,32 @@
 import express from "express";
 import axios from "axios";
 import Repository from "../models/Repository.js";
+import { requireAuth } from "./auth.js";
 
 const router = express.Router();
+// Delete a repository integration
+router.delete("/repository/:id", requireAuth, async (req, res) => {
+  try {
+    const repoId = req.params.id;
+    const User = (await import("../models/User.js")).default;
+    const Repository = (await import("../models/Repository.js")).default;
+    // Remove from Repository collection
+    await Repository.deleteOne({ _id: repoId });
+    // Remove from user's github.repos array
+    const user = await User.findById(req.userId);
+    if (user && user.github && Array.isArray(user.github.repos)) {
+      user.github.repos = user.github.repos.filter(
+        (r) => String(r._id) !== String(repoId)
+      );
+      await user.save();
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to delete repository", message: error.message });
+  }
+});
 
 // Initiate GitHub OAuth flow
 router.get("/oauth/init", (req, res) => {
@@ -59,12 +83,92 @@ router.get("/oauth/callback", async (req, res) => {
         Accept: "application/vnd.github.v3+json",
       },
     });
-
     const userData = userResponse.data;
+
+    // Get user's repositories
+    const reposResponse = await axios.get("https://api.github.com/user/repos", {
+      headers: {
+        Authorization: `token ${accessToken}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+      params: {
+        per_page: 100,
+        sort: "updated",
+        type: "all",
+      },
+    });
+    const repositories = reposResponse.data.map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description,
+      htmlUrl: repo.html_url,
+      language: repo.language,
+      stargazersCount: repo.stargazers_count,
+      forksCount: repo.forks_count,
+      openIssuesCount: repo.open_issues_count,
+      isPrivate: repo.private,
+      owner: {
+        login: repo.owner.login,
+        id: repo.owner.id,
+        avatarUrl: repo.owner.avatar_url,
+        htmlUrl: repo.owner.html_url,
+      },
+      status: "active",
+      lastSynced: new Date(),
+    }));
+
+    // Try to get userId from JWT (Authorization header or query param)
+    let user = null;
+    const User = (await import("../models/User.js")).default;
+    let userId = null;
+    // Try Authorization header
+    if (req.headers.authorization) {
+      try {
+        const jwt = require("jsonwebtoken");
+        const token = req.headers.authorization.replace("Bearer ", "");
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || "supersecret"
+        );
+        userId = decoded.userId;
+      } catch {}
+    }
+    // Try query param
+    if (!userId && req.query.token) {
+      try {
+        const jwt = require("jsonwebtoken");
+        const decoded = jwt.verify(
+          req.query.token,
+          process.env.JWT_SECRET || "supersecret"
+        );
+        userId = decoded.userId;
+      } catch {}
+    }
+    if (userId) {
+      user = await User.findById(userId);
+    } else {
+      // Fallback to email if not authenticated
+      const email =
+        userData.email || (userData.emails && userData.emails[0]?.email);
+      user = email ? await User.findOne({ email }) : null;
+    }
+    if (user) {
+      user.github = {
+        accessToken,
+        username: userData.login,
+        avatarUrl: userData.avatar_url,
+        profileUrl: userData.html_url,
+        bio: userData.bio,
+        location: userData.location,
+        repos: repositories,
+      };
+      await user.save();
+    }
 
     // Redirect back to frontend with success
     res.redirect(
-      `${process.env.CORS_ORIGIN}/ai-mentor?github_connected=true&user=${encodeURIComponent(
+      `${process.env.CORS_ORIGIN}/analysis?github_connected=true&user=${encodeURIComponent(
         JSON.stringify({
           id: userData.id,
           login: userData.login,
@@ -135,7 +239,7 @@ router.post("/repositories", async (req, res) => {
 });
 
 // Save repository integration
-router.post("/save-integration", async (req, res) => {
+router.post("/save-integration", requireAuth, async (req, res) => {
   try {
     const {
       repository,
@@ -153,6 +257,10 @@ router.post("/save-integration", async (req, res) => {
     // Check if repository already exists
     let existingRepo = await Repository.findOne({ githubId: repository.id });
 
+    // Find user by req.userId (from JWT)
+    const User = (await import("../models/User.js")).default;
+    let user = await User.findById(req.userId);
+
     if (existingRepo) {
       // Update existing repository
       existingRepo.integrationSettings = {
@@ -169,6 +277,25 @@ router.post("/save-integration", async (req, res) => {
       existingRepo.lastSynced = new Date();
       existingRepo.status = "active";
       await existingRepo.save();
+
+      // Update user's github field
+      if (user) {
+        user.github = user.github || {};
+        user.github.accessToken = accessToken;
+        user.github.repos = user.github.repos || [];
+        // Remove any previous repo with same id
+        user.github.repos = user.github.repos.filter(
+          (r) => r.id !== repository.id
+        );
+        user.github.repos.push({
+          ...repository,
+          integrationSettings,
+          notificationSettings,
+          status: "active",
+          lastSynced: new Date(),
+        });
+        await user.save();
+      }
 
       res.json({
         success: true,
@@ -207,6 +334,25 @@ router.post("/save-integration", async (req, res) => {
       });
 
       await newRepo.save();
+
+      // Update user's github field
+      if (user) {
+        user.github = user.github || {};
+        user.github.accessToken = accessToken;
+        user.github.repos = user.github.repos || [];
+        // Remove any previous repo with same id
+        user.github.repos = user.github.repos.filter(
+          (r) => r.id !== repository.id
+        );
+        user.github.repos.push({
+          ...repository,
+          integrationSettings,
+          notificationSettings,
+          status: "active",
+          lastSynced: new Date(),
+        });
+        await user.save();
+      }
 
       res.json({
         success: true,

@@ -15,6 +15,9 @@ const userSchema = new mongoose.Schema(
       accessToken: String,
       username: String,
       avatarUrl: String,
+      profileUrl: String,
+      bio: String,
+      location: String,
       repos: [
         {
           id: Number,
@@ -44,6 +47,22 @@ const userSchema = new mongoose.Schema(
       accessToken: String,
       username: String,
       avatarUrl: String,
+      profileUrl: String,
+      bio: String,
+      location: String,
+    },
+    profile: {
+      avatarUrl: String,
+      bio: String,
+      location: String,
+      website: String,
+      company: String,
+      social: {
+        github: String,
+        twitter: String,
+        linkedin: String,
+        website: String,
+      },
     },
   },
   { timestamps: true }
