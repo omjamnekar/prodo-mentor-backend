@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import githubRoutes from "./routes/github.js";
 import repositoryRoutes from "./routes/repositories.js";
 import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/user.js";
 
 // Load environment variables
 dotenv.config();
@@ -58,6 +59,7 @@ mongoose
 app.use("/api/auth", authRoutes);
 app.use("/api/github", githubRoutes);
 app.use("/api/repositories", repositoryRoutes);
+app.use("/api/user", userRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
