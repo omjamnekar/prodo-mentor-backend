@@ -4,6 +4,46 @@ import Repository from "../models/Repository.js";
 import { requireAuth } from "./auth.js";
 
 const router = express.Router();
+
+// Get GitHub connection status for current user
+router.get("/status", requireAuth, async (req, res) => {
+  try {
+    const User = (await import("../models/User.js")).default;
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const github = user.github || {};
+    res.json({
+      connected: !!github.accessToken,
+      accessToken: github.accessToken || null,
+      githubUser: github.user || null,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to fetch GitHub status", message: error.message });
+  }
+});
+
+// Get user's stored GitHub repositories
+router.get("/stored-repositories", requireAuth, async (req, res) => {
+  try {
+    const User = (await import("../models/User.js")).default;
+    const user = await User.findById(req.userId);
+    if (!user || !user.github || !Array.isArray(user.github.repos)) {
+      return res.status(404).json({ error: "No stored repositories found" });
+    }
+    res.json({ repositories: user.github.repos });
+  } catch (error) {
+    res
+      .status(500)
+      .json({
+        error: "Failed to fetch stored repositories",
+        message: error.message,
+      });
+  }
+});
 // Delete a repository integration
 router.delete("/repository/:id", requireAuth, async (req, res) => {
   try {
@@ -37,10 +77,13 @@ router.get("/oauth/init", (req, res) => {
   const scope = "repo,read:org,read:user,user:email";
   const state = Math.random().toString(36).substring(7);
 
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=${state}`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${encodeURIComponent(scope)}&state=${state}`;
 
   res.json({
     success: true,
+
     authUrl,
     state,
   });
@@ -168,7 +211,9 @@ router.get("/oauth/callback", async (req, res) => {
 
     // Redirect back to frontend with success
     res.redirect(
-      `${process.env.CORS_ORIGIN}/analysis?github_connected=true&user=${encodeURIComponent(
+      `${
+        process.env.CORS_ORIGIN
+      }/analysis?github_connected=true&user=${encodeURIComponent(
         JSON.stringify({
           id: userData.id,
           login: userData.login,
