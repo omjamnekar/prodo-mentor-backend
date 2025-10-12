@@ -6,6 +6,7 @@ import githubRoutes from "./routes/github.js";
 import repositoryRoutes from "./routes/repositories.js";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
+import ragRouter from "./routes/rag.js"; // Importing the new RAG router
 
 // Load environment variables
 dotenv.config();
@@ -60,6 +61,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/github", githubRoutes);
 app.use("/api/repositories", repositoryRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/rag", ragRouter); // Registering the new RAG route
 
 // Health check endpoint
 app.get("/health", (req, res) => {

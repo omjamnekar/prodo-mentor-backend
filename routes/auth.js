@@ -1,3 +1,19 @@
+// New endpoint: Return JWT token after successful GitHub integration
+router.get("/github/token", async (req, res) => {
+  try {
+    // You may want to validate the user/session here
+    // For demo, just return a token for a test user
+    const user = await User.findOne({ email: "demo@example.com" });
+    if (!user)
+      return res.status(404).json({ success: false, error: "User not found" });
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+    res.json({ success: true, token });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 import express from "express";
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
@@ -14,7 +30,11 @@ router.get("/google/init", (req, res) => {
     "http://localhost:3001/api/auth/google/callback";
   const scope = ["openid", "email", "profile"].join(" ");
   const state = Math.random().toString(36).substring(7);
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}&access_type=offline&prompt=consent`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&response_type=code&scope=${encodeURIComponent(
+    scope
+  )}&state=${state}&access_type=offline&prompt=consent`;
   res.redirect(authUrl);
 });
 
@@ -153,7 +173,9 @@ router.get("/github/init", (req, res) => {
     "http://localhost:3001/api/auth/github/callback";
   const scope = "user:email,read:user,repo";
   const state = Math.random().toString(36).substring(7);
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=${state}`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${encodeURIComponent(scope)}&state=${state}`;
   res.redirect(authUrl);
 });
 
