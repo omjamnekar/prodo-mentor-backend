@@ -5,6 +5,8 @@ import express from "express";
 import axios from "axios";
 import Repository from "../models/Repository.js";
 import { requireAuth } from "./auth.js";
+import { registerWebhookController } from "../src/api/controllers/githubController.js";
+import { githubWebhookEventController } from "../src/api/controllers/githubController.js";
 
 const router = express.Router();
 
@@ -51,6 +53,8 @@ router.delete("/repository/:id", requireAuth, async (req, res) => {
     const repoId = req.params.id;
     const User = (await import("../models/User.js")).default;
     const Repository = (await import("../models/Repository.js")).default;
+    // Find repo info before deleting
+    const repo = await Repository.findById(repoId);
     // Remove from Repository collection
     await Repository.deleteOne({ _id: repoId });
     // Remove from user's github.repos array
@@ -60,6 +64,31 @@ router.delete("/repository/:id", requireAuth, async (req, res) => {
         (r) => String(r._id) !== String(repoId)
       );
       await user.save();
+    }
+    // Remove webhook if repo info is available
+    if (repo && repo.fullName && repo.accessToken) {
+      try {
+        const { removeGitHubWebhook } = await import(
+          "../src/api/services/githubWebhookRemoveService.js"
+        );
+        const webhookUrl =
+          process.env.WEBHOOK_RECEIVER_URL ||
+          "http://your-backend-domain/api/github/webhook/event";
+        await removeGitHubWebhook(repo.fullName, repo.accessToken, webhookUrl);
+      } catch (err) {
+        console.error("Error removing webhook:", err.message);
+      }
+    }
+    // Remove RAG vectors for this repo
+    if (repo && repo._id) {
+      try {
+        await axios.delete(
+          (process.env.RAG_PATH || "http://0.0.0.0:8002") + "/rag/delete",
+          { params: { repoId: String(repo._id) } }
+        );
+      } catch (err) {
+        console.error("Error deleting RAG vectors:", err.message);
+      }
     }
     res.json({ success: true });
   } catch (error) {
@@ -296,5 +325,11 @@ router.post("/save-integration", requireAuth, async (req, res) => {
     });
   }
 });
+
+// Register GitHub webhook for repo
+router.post("/webhook/register", requireAuth, registerWebhookController);
+
+// GitHub webhook event receiver
+router.post("/webhook/event", githubWebhookEventController);
 
 export default router;

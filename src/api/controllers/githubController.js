@@ -1,3 +1,94 @@
+import { registerGitHubWebhook } from "../services/githubWebhookService.js";
+// POST /api/github/webhook/event
+export async function githubWebhookEventController(req, res) {
+  try {
+    // GitHub sends events as JSON in req.body
+    const event = req.body;
+    console.log("[Webhook] Event received:", JSON.stringify(event, null, 2));
+    // Only handle push and pull_request events
+    if (event.commits) {
+      // Push event: collect changed/added files from all commits
+      const changedFiles = new Set();
+      for (const commit of event.commits) {
+        (commit.added || []).forEach((f) => changedFiles.add(f));
+        (commit.modified || []).forEach((f) => changedFiles.add(f));
+      }
+      // You can now fetch these files from GitHub API for indexing
+      // TODO: Call file-fetching service and RAG indexing here
+      // Fetch repo info and access token from your DB (example assumes repoFullName and accessToken are available)
+      const repoFullName = event.repository?.full_name;
+      // TODO: Lookup accessToken securely from your DB using repo info
+      const accessToken = process.env.GITHUB_ACCESS_TOKEN; // Replace with DB lookup
+      // Fetch changed files
+      const files = await fetchChangedFiles(
+        repoFullName,
+        accessToken,
+        Array.from(changedFiles)
+      );
+      // Send files to RAG service for indexing
+      if (files.length > 0) {
+        const flatMetadata = {
+          githubId: String(event.repository?.id),
+          name: String(event.repository?.name),
+        };
+        const payload = {
+          repoId: String(event.repository?.id),
+          files,
+          metadata: flatMetadata,
+        };
+        try {
+          await axios.post(
+            process.env.RAG_PATH + "/rag/index" ||
+              "http://0.0.0.0:8002/rag/index",
+            payload
+          );
+        } catch (err) {
+          console.error("Error sending files to RAG service:", err.message);
+        }
+      }
+      res.json({ success: true, indexedFiles: files.length });
+    } else if (event.pull_request) {
+      // Pull request event: can fetch changed files from PR API
+      // TODO: Implement PR file change extraction
+      res.json({ success: true, message: "PR event received" });
+    } else {
+      res.json({ success: true, message: "Event ignored (not push/PR)" });
+    }
+  } catch (error) {
+    console.error("Webhook event error:", error);
+    res.status(500).json({
+      error: "Failed to process webhook event",
+      message: error.message,
+    });
+  }
+}
+
+// POST /api/github/webhook/register
+export async function registerWebhookController(req, res) {
+  try {
+    const { repoFullName, accessToken } = req.body;
+    if (!repoFullName || !accessToken) {
+      return res
+        .status(400)
+        .json({ error: "repoFullName and accessToken required" });
+    }
+    // The backend endpoint to receive webhook events
+    const webhookUrl =
+      process.env.WEBHOOK_RECEIVER_URL ||
+      "http://your-backend-domain/api/github/webhook/event";
+    const result = await registerGitHubWebhook(
+      repoFullName,
+      accessToken,
+      webhookUrl
+    );
+    res.json({ success: true, webhook: result });
+  } catch (error) {
+    console.error("Webhook registration error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to register webhook", message: error.message });
+  }
+}
 import axios from "axios";
 import Repository from "../../../models/Repository.js";
 
@@ -99,6 +190,19 @@ export async function saveIntegrationController(req, res) {
         await user.save();
       }
     }
+    // Automatically register webhook after repo is saved
+    try {
+      const { registerGitHubWebhook } = await import(
+        "../services/githubWebhookService.js"
+      );
+      const webhookUrl =
+        process.env.WEBHOOK_RECEIVER_URL ||
+        "http://your-backend-domain/api/github/webhook/event";
+      await registerGitHubWebhook(repository.fullName, accessToken, webhookUrl);
+    } catch (err) {
+      console.error("Error registering webhook:", err.message);
+    }
+
     // Recursively fetch all code/text files from the repo
     const allowedExtensions = [
       "js",
@@ -126,6 +230,7 @@ export async function saveIntegrationController(req, res) {
     ];
     const maxFileSize = 1024 * 1024; // 1MB
     let files = [];
+
     async function fetchFilesRecursively(path = "") {
       const url = `https://api.github.com/repos/${
         repository.fullName
@@ -169,13 +274,26 @@ export async function saveIntegrationController(req, res) {
     // Send files to RAG service for indexing
     try {
       if (files.length > 0) {
+        // Flatten metadata values to strings
+        const flatMetadata = {
+          githubId: String(repository.id),
+          name: String(repository.name),
+        };
+        const payload = {
+          repoId: String(repoId),
+          files,
+          metadata: flatMetadata,
+        };
+        console.log(
+          "Payload sent to RAG:",
+          JSON.stringify(payload.repoId, null, 2),
+          JSON.stringify(payload.files[0], null, 2),
+          JSON.stringify(payload.metadata, null, 2)
+        );
         await axios.post(
-          process.env.RAG_API_URL || "http://localhost:8000/rag/index",
-          {
-            repoId: String(repoId),
-            files,
-            metadata: { githubId: repository.id, name: repository.name },
-          }
+          process.env.RAG_PATH + "/rag/index" ||
+            "http://0.0.0.0:8002/rag/index",
+          payload
         );
       }
     } catch (err) {
