@@ -1,3 +1,10 @@
+import express from "express";
+import User from "../models/User.js";
+import jwt from "jsonwebtoken";
+import axios from "axios";
+
+const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 // New endpoint: Return JWT token after successful GitHub integration
 router.get("/github/token", async (req, res) => {
   try {
@@ -14,13 +21,6 @@ router.get("/github/token", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-import express from "express";
-import User from "../models/User.js";
-import jwt from "jsonwebtoken";
-import axios from "axios";
-
-const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 
 // Google OAuth: Step 1 - Redirect to Google
 router.get("/google/init", (req, res) => {
