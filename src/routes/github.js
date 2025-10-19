@@ -1,19 +1,19 @@
 const { saveIntegrationController } = await import(
-  "../src/api/controllers/githubController.js"
+  "../api/controllers/githubController.js"
 );
 import express from "express";
 import axios from "axios";
-import Repository from "../models/Repository.js";
+import Repository from "../../models/Repository.js";
 import { requireAuth } from "./auth.js";
-import { registerWebhookController } from "../src/api/controllers/githubController.js";
-import { githubWebhookEventController } from "../src/api/controllers/githubController.js";
+import { registerWebhookController } from "../api/controllers/githubController.js";
+import { githubWebhookEventController } from "../api/controllers/githubController.js";
 
 const router = express.Router();
 
 // Get GitHub connection status for current user
 router.get("/status", requireAuth, async (req, res) => {
   try {
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     const user = await User.findById(req.userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -34,7 +34,7 @@ router.get("/status", requireAuth, async (req, res) => {
 // Get user's stored GitHub repositories
 router.get("/stored-repositories", requireAuth, async (req, res) => {
   try {
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     const user = await User.findById(req.userId);
     if (!user || !user.github || !Array.isArray(user.github.repos)) {
       return res.status(404).json({ error: "No stored repositories found" });
@@ -51,8 +51,8 @@ router.get("/stored-repositories", requireAuth, async (req, res) => {
 router.delete("/repository/:id", requireAuth, async (req, res) => {
   try {
     const repoId = req.params.id;
-    const User = (await import("../models/User.js")).default;
-    const Repository = (await import("../models/Repository.js")).default;
+    const User = (await import("../../models/User.js")).default;
+    const Repository = (await import("../../models/Repository.js")).default;
     // Find repo info before deleting
     const repo = await Repository.findById(repoId);
     // Remove from Repository collection
@@ -69,7 +69,7 @@ router.delete("/repository/:id", requireAuth, async (req, res) => {
     if (repo && repo.fullName && repo.accessToken) {
       try {
         const { removeGitHubWebhook } = await import(
-          "../src/api/services/githubWebhookRemoveService.js"
+          "../api/services/githubWebhookRemoveService.js"
         );
         const webhookUrl =
           process.env.WEBHOOK_RECEIVER_URL ||
@@ -193,7 +193,7 @@ router.get("/oauth/callback", async (req, res) => {
 
     // Try to get userId from JWT (Authorization header or query param)
     let user = null;
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     let userId = null;
     // Try Authorization header
     if (req.headers.authorization) {
