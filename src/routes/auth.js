@@ -1,10 +1,26 @@
 import express from "express";
-import User from "../models/User.js";
+import User from "../../models/User.js";
 import jwt from "jsonwebtoken";
 import axios from "axios";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+// New endpoint: Return JWT token after successful GitHub integration
+router.get("/github/token", async (req, res) => {
+  try {
+    // You may want to validate the user/session here
+    // For demo, just return a token for a test user
+    const user = await User.findOne({ email: "demo@example.com" });
+    if (!user)
+      return res.status(404).json({ success: false, error: "User not found" });
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+    res.json({ success: true, token });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Google OAuth: Step 1 - Redirect to Google
 router.get("/google/init", (req, res) => {
@@ -14,7 +30,11 @@ router.get("/google/init", (req, res) => {
     "http://localhost:3001/api/auth/google/callback";
   const scope = ["openid", "email", "profile"].join(" ");
   const state = Math.random().toString(36).substring(7);
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}&access_type=offline&prompt=consent`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&response_type=code&scope=${encodeURIComponent(
+    scope
+  )}&state=${state}&access_type=offline&prompt=consent`;
   res.redirect(authUrl);
 });
 
@@ -117,6 +137,7 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
+
     const valid = await user.comparePassword(password);
     if (!valid) return res.status(400).json({ error: "Invalid credentials" });
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
@@ -146,14 +167,17 @@ export function requireAuth(req, res, next) {
 }
 
 // GitHub OAuth: Step 1 - Redirect to GitHub
-router.get("/github/init", (req, res) => {
+router.get("/github/init", (_, res) => {
   const clientId = process.env.GITHUB_CLIENT_ID;
   const redirectUri =
     process.env.GITHUB_REDIRECT_URI ||
     "http://localhost:3001/api/auth/github/callback";
   const scope = "user:email,read:user,repo";
   const state = Math.random().toString(36).substring(7);
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=${state}`;
+
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${encodeURIComponent(scope)}&state=${state}`;
   res.redirect(authUrl);
 });
 

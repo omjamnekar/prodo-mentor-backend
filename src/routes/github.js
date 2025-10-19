@@ -1,14 +1,19 @@
+const { saveIntegrationController } = await import(
+  "../api/controllers/githubController.js"
+);
 import express from "express";
 import axios from "axios";
-import Repository from "../models/Repository.js";
+import Repository from "../../models/Repository.js";
 import { requireAuth } from "./auth.js";
+import { registerWebhookController } from "../api/controllers/githubController.js";
+import { githubWebhookEventController } from "../api/controllers/githubController.js";
 
 const router = express.Router();
 
 // Get GitHub connection status for current user
 router.get("/status", requireAuth, async (req, res) => {
   try {
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     const user = await User.findById(req.userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -29,27 +34,27 @@ router.get("/status", requireAuth, async (req, res) => {
 // Get user's stored GitHub repositories
 router.get("/stored-repositories", requireAuth, async (req, res) => {
   try {
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     const user = await User.findById(req.userId);
     if (!user || !user.github || !Array.isArray(user.github.repos)) {
       return res.status(404).json({ error: "No stored repositories found" });
     }
     res.json({ repositories: user.github.repos });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        error: "Failed to fetch stored repositories",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to fetch stored repositories",
+      message: error.message,
+    });
   }
 });
 // Delete a repository integration
 router.delete("/repository/:id", requireAuth, async (req, res) => {
   try {
     const repoId = req.params.id;
-    const User = (await import("../models/User.js")).default;
-    const Repository = (await import("../models/Repository.js")).default;
+    const User = (await import("../../models/User.js")).default;
+    const Repository = (await import("../../models/Repository.js")).default;
+    // Find repo info before deleting
+    const repo = await Repository.findById(repoId);
     // Remove from Repository collection
     await Repository.deleteOne({ _id: repoId });
     // Remove from user's github.repos array
@@ -59,6 +64,31 @@ router.delete("/repository/:id", requireAuth, async (req, res) => {
         (r) => String(r._id) !== String(repoId)
       );
       await user.save();
+    }
+    // Remove webhook if repo info is available
+    if (repo && repo.fullName && repo.accessToken) {
+      try {
+        const { removeGitHubWebhook } = await import(
+          "../api/services/githubWebhookRemoveService.js"
+        );
+        const webhookUrl =
+          process.env.WEBHOOK_RECEIVER_URL ||
+          "http://your-backend-domain/api/github/webhook/event";
+        await removeGitHubWebhook(repo.fullName, repo.accessToken, webhookUrl);
+      } catch (err) {
+        console.error("Error removing webhook:", err.message);
+      }
+    }
+    // Remove RAG vectors for this repo
+    if (repo && repo._id) {
+      try {
+        await axios.delete(
+          (process.env.RAG_PATH || "http://0.0.0.0:8002") + "/rag/delete",
+          { params: { repoId: String(repo._id) } }
+        );
+      } catch (err) {
+        console.error("Error deleting RAG vectors:", err.message);
+      }
     }
     res.json({ success: true });
   } catch (error) {
@@ -163,7 +193,7 @@ router.get("/oauth/callback", async (req, res) => {
 
     // Try to get userId from JWT (Authorization header or query param)
     let user = null;
-    const User = (await import("../models/User.js")).default;
+    const User = (await import("../../models/User.js")).default;
     let userId = null;
     // Try Authorization header
     if (req.headers.authorization) {
@@ -286,127 +316,7 @@ router.post("/repositories", async (req, res) => {
 // Save repository integration
 router.post("/save-integration", requireAuth, async (req, res) => {
   try {
-    const {
-      repository,
-      integrationSettings,
-      notificationSettings,
-      accessToken,
-    } = req.body;
-
-    if (!repository || !accessToken) {
-      return res
-        .status(400)
-        .json({ error: "Repository data and access token are required" });
-    }
-
-    // Check if repository already exists
-    let existingRepo = await Repository.findOne({ githubId: repository.id });
-
-    // Find user by req.userId (from JWT)
-    const User = (await import("../models/User.js")).default;
-    let user = await User.findById(req.userId);
-
-    if (existingRepo) {
-      // Update existing repository
-      existingRepo.integrationSettings = {
-        ...existingRepo.integrationSettings,
-        ...integrationSettings,
-      };
-      if (notificationSettings) {
-        existingRepo.notificationSettings = {
-          ...existingRepo.notificationSettings,
-          ...notificationSettings,
-        };
-      }
-      existingRepo.accessToken = accessToken;
-      existingRepo.lastSynced = new Date();
-      existingRepo.status = "active";
-      await existingRepo.save();
-
-      // Update user's github field
-      if (user) {
-        user.github = user.github || {};
-        user.github.accessToken = accessToken;
-        user.github.repos = user.github.repos || [];
-        // Remove any previous repo with same id
-        user.github.repos = user.github.repos.filter(
-          (r) => r.id !== repository.id
-        );
-        user.github.repos.push({
-          ...repository,
-          integrationSettings,
-          notificationSettings,
-          status: "active",
-          lastSynced: new Date(),
-        });
-        await user.save();
-      }
-
-      res.json({
-        success: true,
-        message: "Repository integration updated successfully",
-        repository: await Repository.findById(existingRepo._id).select(
-          "-accessToken"
-        ),
-      });
-    } else {
-      // Create new repository record
-      const newRepo = new Repository({
-        githubId: repository.id,
-        name: repository.name,
-        fullName: repository.fullName,
-        description: repository.description,
-        htmlUrl: repository.htmlUrl,
-        language: repository.language,
-        size: repository.size,
-        stargazersCount: repository.stargazersCount,
-        forksCount: repository.forksCount,
-        openIssuesCount: repository.openIssuesCount,
-        isPrivate: repository.isPrivate,
-        owner: repository.owner,
-        integrationSettings: integrationSettings || {
-          autoCreateIssues: true,
-          assignToUsers: [],
-          issueLabels: ["ai-mentor", "improvement"],
-          issuePriority: "medium",
-          createPRComments: true,
-        },
-        notificationSettings: notificationSettings || {
-          emailNotifications: true,
-        },
-        accessToken: accessToken,
-        status: "active",
-      });
-
-      await newRepo.save();
-
-      // Update user's github field
-      if (user) {
-        user.github = user.github || {};
-        user.github.accessToken = accessToken;
-        user.github.repos = user.github.repos || [];
-        // Remove any previous repo with same id
-        user.github.repos = user.github.repos.filter(
-          (r) => r.id !== repository.id
-        );
-        user.github.repos.push({
-          ...repository,
-          integrationSettings,
-          notificationSettings,
-          status: "active",
-          lastSynced: new Date(),
-        });
-        await user.save();
-      }
-
-      res.json({
-        success: true,
-        message: "Repository integration created successfully",
-        repository: await Repository.findById(newRepo._id).select(
-          "-accessToken"
-        ),
-      });
-    }
+    await saveIntegrationController(req, res);
   } catch (error) {
     console.error("Save integration error:", error);
     res.status(500).json({
@@ -415,5 +325,11 @@ router.post("/save-integration", requireAuth, async (req, res) => {
     });
   }
 });
+
+// Register GitHub webhook for repo
+router.post("/webhook/register", requireAuth, registerWebhookController);
+
+// GitHub webhook event receiver
+router.post("/webhook/event", githubWebhookEventController);
 
 export default router;
