@@ -2,11 +2,11 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import githubRoutes from "./routes/github.js";
-import repositoryRoutes from "./routes/repositories.js";
-import authRoutes from "./routes/auth.js";
-import userRoutes from "./routes/user.js";
-import ragRouter from "./routes/rag.js"; // Importing the new RAG router
+import githubRoutes from "./src/routes/github.js";
+import repositoryRoutes from "./src/routes/repositories.js";
+import authRoutes from "./src/routes/auth.js";
+import userRoutes from "./src/routes/user.js";
+import ragRouter from "./src/routes/rag.js"; // Importing the new RAG router
 
 // Load environment variables
 dotenv.config();
