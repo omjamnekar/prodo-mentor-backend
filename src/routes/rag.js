@@ -1,6 +1,6 @@
 import express from "express";
-import { queryRAG } from "../utils/ragClient.js";
-import Repository from "../models/Repository.js";
+import { queryRAG } from "../../utils/ragClient.js";
+import Repository from "../../models/Repository.js";
 
 const router = express.Router();
 

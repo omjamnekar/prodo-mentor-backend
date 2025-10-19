@@ -23,3 +23,5 @@ coverage/
 
 # Others
 *.local
+
+node_modules
