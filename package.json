@@ -8,7 +8,12 @@
     "start": "node src/server.js",
     "start:prod": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --watch",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json --coverage",
+    "test:unit": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json tests/unit",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json tests/integration",
+    "test:system": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.json tests/system"
   },
   "keywords": [
     "ai",
@@ -29,7 +34,11 @@
     "mongoose": "^7.8.7"
   },
   "devDependencies": {
+    "@jest/globals": "^29.7.0",
     "@types/express": "^5.0.3",
-    "nodemon": "^3.0.1"
+    "cross-env": "^10.1.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.4"
   }
 }
