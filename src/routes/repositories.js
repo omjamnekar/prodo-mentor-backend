@@ -1,7 +1,7 @@
 import express from "express";
-import Repository from "../../models/Repository.js";
-import User from "../../models/User.js";
-import { requireAuth } from "./auth.js";
+import Repository from "../models/Repository.js";
+import User from "../models/User.js";
+import { requireAuth } from "../middlewares/required_token.js";
 
 const router = express.Router();
 
