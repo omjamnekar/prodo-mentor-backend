@@ -7,10 +7,15 @@ import repositoryRoutes from "./routes/repositories.js";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
 import ragRouter from "./routes/rag.js"; // Importing the new RAG router
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Fix for __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -57,6 +62,12 @@ mongoose
   });
 
 // Routes
+
+// Root route - serve index.html only for root path
+app.get("/", (_, res) => {
+  res.sendFile(path.resolve(__dirname, "../public/index.html"));
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/github", githubRoutes);
 app.use("/api/repositories", repositoryRoutes);
@@ -64,7 +75,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/rag", ragRouter); // Registering the new RAG route
 
 // Health check endpoint
-app.get("/health", (req, res) => {
+app.get("/health", (_, res) => {
   res.json({
     status: "OK",
     message: "Legal Assistant Backend is running",
@@ -73,7 +84,7 @@ app.get("/health", (req, res) => {
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err, _, res, __) => {
   console.error(err.stack);
   res.status(500).json({
     error: "Something went wrong!",
@@ -85,11 +96,17 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use("*", (req, res) => {
+app.use("*", (_, res) => {
   res.status(404).json({ error: "Route not found" });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
-});
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== "test") {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`🌐 Health check: http://localhost:${PORT}/health`);
+  });
+}
+
+// Export app for testing
+export default app;
